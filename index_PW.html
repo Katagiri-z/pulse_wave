@@ -1,0 +1,550 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>高機能 脈波測定（HRV）Webアプリ</title>
+    <!-- Tailwind CSSとHeroiconsを読み込み -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Chart.jsを読み込み -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        /* ダークモード対応と基本的なスタイル */
+        body {
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+        }
+        .chart-container {
+            position: relative;
+            height: 300px;
+            width: 100%;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 dark:bg-gray-900 text-gray-800 dark:text-gray-200 font-sans">
+
+    <div class="container mx-auto p-4 md:p-8 max-w-4xl">
+        
+        <!-- ヘッダー -->
+        <header class="text-center mb-8">
+            <h1 class="text-3xl md:text-4xl font-bold text-indigo-600 dark:text-indigo-400">脈波測定 (HRV) アプリ</h1>
+            <p class="mt-2 text-lg text-gray-600 dark:text-gray-400">スマートフォンのカメラで心拍変動を測定します</p>
+        </header>
+
+        <!-- メインコンテンツ -->
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+
+            <!-- 左側: カメラと操作パネル -->
+            <div class="flex flex-col gap-6">
+                <!-- ユーザー情報 -->
+                <div class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
+                    <label for="username" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">お名前</label>
+                    <input type="text" id="username" placeholder="名前を入力 (任意)" class="w-full px-4 py-2 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition">
+                </div>
+                
+                <!-- カメラ映像 -->
+                <div class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-4 flex flex-col items-center justify-center aspect-video">
+                    <video id="video" autoplay playsinline class="w-full h-full rounded-md object-cover bg-gray-200 dark:bg-gray-700"></video>
+                    <canvas id="canvas" class="hidden"></canvas>
+                    <div id="instruction" class="text-center text-gray-500 dark:text-gray-400">
+                        <p>背面のカメラとライトを指で覆ってください。</p>
+                        <p class="text-sm">（ライトが点灯します）</p>
+                    </div>
+                </div>
+
+                <!-- 操作ボタン -->
+                <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                    <button id="startButton" onclick="startMeasure()" class="w-full flex items-center justify-center gap-2 bg-indigo-600 text-white font-semibold py-3 px-4 rounded-lg shadow-md hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition disabled:bg-gray-400 disabled:cursor-not-allowed">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clip-rule="evenodd" /></svg>
+                        <span>スタート</span>
+                    </button>
+                    <button id="stopButton" onclick="stopMeasure()" class="w-full flex items-center justify-center gap-2 bg-red-600 text-white font-semibold py-3 px-4 rounded-lg shadow-md hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 transition disabled:bg-gray-400 disabled:cursor-not-allowed" disabled>
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8 7a1 1 0 00-1 1v4a1 1 0 001 1h4a1 1 0 001-1V8a1 1 0 00-1-1H8z" clip-rule="evenodd" /></svg>
+                        <span>ストップ</span>
+                    </button>
+                    <button id="downloadButton" onclick="downloadCSV()" class="w-full flex items-center justify-center gap-2 bg-green-600 text-white font-semibold py-3 px-4 rounded-lg shadow-md hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 transition disabled:bg-gray-400 disabled:cursor-not-allowed" disabled>
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path d="M10 3a1 1 0 00-1 1v5H5a1 1 0 100 2h4v5a1 1 0 102 0v-5h4a1 1 0 100-2h-4V4a1 1 0 00-1-1z" clip-rule="evenodd" /><path d="M3 10a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1z" clip-rule="evenodd" /></svg>
+                        <span>CSV保存</span>
+                    </button>
+                </div>
+                 <div id="status" class="text-center p-2 bg-yellow-100 dark:bg-yellow-800 text-yellow-800 dark:text-yellow-100 rounded-lg hidden mt-4"></div>
+            </div>
+
+            <!-- 右側: 結果とチャート -->
+            <div class="flex flex-col gap-6">
+                <!-- 解析結果 -->
+                <div id="resultContainer" class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6 hidden">
+                    <h2 class="text-xl font-bold mb-4 border-b pb-2 border-gray-200 dark:border-gray-700">最終解析結果</h2>
+                    <div id="result" class="grid grid-cols-2 gap-4 text-center">
+                        <div>
+                            <p class="text-sm text-gray-500 dark:text-gray-400">平均心拍数 (BPM)</p>
+                            <p id="bpmValue" class="text-2xl font-semibold text-indigo-600 dark:text-indigo-400">-</p>
+                        </div>
+                        <div>
+                            <p class="text-sm text-gray-500 dark:text-gray-400">心拍変動 (SDNN)</p>
+                            <p id="sdnnValue" class="text-2xl font-semibold text-indigo-600 dark:text-indigo-400">-</p>
+                        </div>
+                        <div>
+                            <p class="text-sm text-gray-500 dark:text-gray-400">LF 成分 (ms²)</p>
+                            <p id="lfValue" class="text-2xl font-semibold text-indigo-600 dark:text-indigo-400">-</p>
+                        </div>
+                         <div>
+                            <p class="text-sm text-gray-500 dark:text-gray-400">HF 成分 (ms²)</p>
+                            <p id="hfValue" class="text-2xl font-semibold text-indigo-600 dark:text-indigo-400">-</p>
+                        </div>
+                        <div class="col-span-2">
+                            <p class="text-sm text-gray-500 dark:text-gray-400">LF/HF 比</p>
+                            <p id="lfhfValue" class="text-2xl font-semibold text-indigo-600 dark:text-indigo-400">-</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 脈波波形チャート -->
+                <div class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-4">
+                    <h2 class="text-lg font-bold mb-2">リアルタイム脈波</h2>
+                    <div class="chart-container">
+                        <canvas id="waveformChart"></canvas>
+                    </div>
+                </div>
+
+                <!-- パワースペクトル密度チャート -->
+                <div class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-4">
+                    <h2 class="text-lg font-bold mb-2">リアルタイム PSD</h2>
+                    <div class="chart-container">
+                        <canvas id="psdChart"></canvas>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // --- DOM要素の取得 ---
+        const video = document.getElementById('video');
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d', { willReadFrequently: true });
+        const usernameInput = document.getElementById('username');
+        const startButton = document.getElementById('startButton');
+        const stopButton = document.getElementById('stopButton');
+        const downloadButton = document.getElementById('downloadButton');
+        const instruction = document.getElementById('instruction');
+        const status = document.getElementById('status');
+        const resultContainer = document.getElementById('resultContainer');
+
+        // --- 状態管理用変数 ---
+        let state = {
+            isMeasuring: false,
+            stream: null,
+            track: null,
+            animationFrameId: null,
+            psdIntervalId: null, // リアルタイムPSD更新用
+            startTime: 0,
+            timestamps: [],
+            brightnessData: [],
+            waveformChart: null,
+            psdChart: null,
+        };
+        
+        // --- 初期化処理 ---
+        document.addEventListener('DOMContentLoaded', () => {
+            initializeCharts();
+        });
+
+        // --- チャートの初期化 ---
+        function initializeCharts() {
+            // 波形チャート
+            const waveformCtx = document.getElementById('waveformChart').getContext('2d');
+            state.waveformChart = new Chart(waveformCtx, {
+                type: 'line',
+                data: { labels: [], datasets: [{ label: '輝度変化', data: [], borderColor: 'rgb(79, 70, 229)', borderWidth: 2, pointRadius: 0, tension: 0.1 }] },
+                options: { 
+                    responsive: true, 
+                    maintainAspectRatio: false, 
+                    animation: false, 
+                    scales: { 
+                        x: { 
+                            display: true, // X軸を表示
+                            title: { display: true, text: '時間 (s)' } // X軸のタイトル
+                        }, 
+                        y: { 
+                            title: { display: true, text: '輝度' } 
+                        } 
+                    } 
+                }
+            });
+
+            // PSDチャート
+            const psdCtx = document.getElementById('psdChart').getContext('2d');
+            state.psdChart = new Chart(psdCtx, {
+                type: 'line',
+                data: { labels: [], datasets: [{ label: 'パワースペクトル密度', data: [], borderColor: 'rgb(22, 163, 74)', borderWidth: 2, pointRadius: 0, fill: false }] },
+                options: { 
+                    responsive: true, 
+                    maintainAspectRatio: false, 
+                    scales: { 
+                        x: { 
+                            title: { text: '周波数 (Hz)', display: true },
+                            min: 0,
+                            max: 0.5 // 0.5Hzまで表示
+                        }, 
+                        y: { 
+                            title: { text: 'パワー', display: true }, 
+                            type: 'logarithmic' 
+                        } 
+                    } 
+                }
+            });
+        }
+        
+        // --- メッセージ表示関数 ---
+        function showStatus(message, isError = false) {
+            status.textContent = message;
+            status.classList.remove('hidden');
+            status.classList.toggle('bg-red-100', isError);
+            status.classList.toggle('dark:bg-red-800', isError);
+            status.classList.toggle('text-red-800', isError);
+            status.classList.toggle('dark:text-red-100', isError);
+            status.classList.toggle('bg-yellow-100', !isError);
+            status.classList.toggle('dark:bg-yellow-800', !isError);
+            status.classList.toggle('text-yellow-800', !isError);
+            status.classList.toggle('dark:text-yellow-100', !isError);
+        }
+
+        // --- UIの状態を更新する関数 ---
+        function updateUI(isMeasuring) {
+            state.isMeasuring = isMeasuring;
+            startButton.disabled = isMeasuring;
+            stopButton.disabled = !isMeasuring;
+            downloadButton.disabled = isMeasuring || state.brightnessData.length === 0;
+            video.classList.toggle('hidden', isMeasuring);
+            instruction.classList.toggle('hidden', isMeasuring);
+            if (isMeasuring) {
+                showStatus('測定中...');
+                resultContainer.classList.add('hidden');
+            } else {
+                status.classList.add('hidden');
+            }
+        }
+        
+        // --- 互換性を考慮したカメラアクセス関数 ---
+        function getUserMedia(constraints) {
+            return new Promise((resolve, reject) => {
+                if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+                    navigator.mediaDevices.getUserMedia(constraints).then(resolve).catch(reject);
+                } else {
+                    const legacyGetUserMedia = navigator.getUserMedia || navigator.webkitGetUserMedia || navigator.mozGetUserMedia;
+                    if (legacyGetUserMedia) {
+                        legacyGetUserMedia.call(navigator, constraints, resolve, reject);
+                    } else {
+                        reject(new Error('お使いのブラウザではカメラ機能がサポートされていません。'));
+                    }
+                }
+            });
+        }
+
+        // --- 測定開始 ---
+        async function startMeasure() {
+            if (state.isMeasuring) return;
+            
+            // 前回のデータをリセット
+            state.timestamps = [];
+            state.brightnessData = [];
+            state.waveformChart.data.labels = [];
+            state.waveformChart.data.datasets[0].data = [];
+            state.waveformChart.update();
+            state.psdChart.data.labels = [];
+            state.psdChart.data.datasets[0].data = [];
+            state.psdChart.update();
+
+            try {
+                state.stream = await getUserMedia({ video: { facingMode: 'environment' }, audio: false });
+                video.srcObject = state.stream;
+                await video.play();
+
+                try {
+                    state.track = state.stream.getVideoTracks()[0];
+                    const capabilities = state.track.getCapabilities();
+                    if (capabilities.torch) {
+                        await state.track.applyConstraints({ advanced: [{ torch: true }] });
+                    }
+                } catch (torchError) {
+                    console.warn("トーチ機能の制御に失敗しました:", torchError);
+                    showStatus("トーチを点灯できませんでしたが、測定は可能です。");
+                }
+                
+                updateUI(true);
+                state.startTime = performance.now();
+                state.animationFrameId = requestAnimationFrame(measureLoop);
+                // リアルタイムPSD更新を開始
+                state.psdIntervalId = setInterval(updateRealtimePSD, 2000); // 2秒ごとに更新
+
+            } catch (err) {
+                console.error("カメラへのアクセスに失敗しました:", err);
+                showStatus('エラー: カメラにアクセスできません。ブラウザの権限設定を確認してください。', true);
+                updateUI(false);
+            }
+        }
+
+        // --- 測定ループ ---
+        function measureLoop(currentTime) {
+            if (!state.isMeasuring) return;
+
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+            const frame = ctx.getImageData(0, 0, canvas.width, canvas.height);
+            const avgBrightness = getAverageBrightness(frame.data);
+
+            const elapsedTime = currentTime - state.startTime;
+            state.timestamps.push(elapsedTime);
+            state.brightnessData.push(avgBrightness);
+
+            // リアルタイム波形チャートを更新
+            state.waveformChart.data.labels.push((elapsedTime / 1000).toFixed(1)); // 秒単位に
+            state.waveformChart.data.datasets[0].data.push(avgBrightness);
+            
+            // 表示するデータ点数を制限（約10秒分）
+            const samplingRate = state.timestamps.length > 1 ? 1000 / (state.timestamps[state.timestamps.length - 1] - state.timestamps[state.timestamps.length - 2]) : 30;
+            const maxDataPoints = Math.round(10 * samplingRate); // 約10秒
+            if (state.waveformChart.data.labels.length > maxDataPoints) {
+                state.waveformChart.data.labels.shift();
+                state.waveformChart.data.datasets[0].data.shift();
+            }
+            state.waveformChart.update();
+
+            state.animationFrameId = requestAnimationFrame(measureLoop);
+        }
+
+        // --- 測定停止 ---
+        function stopMeasure() {
+            if (!state.isMeasuring) return;
+
+            cancelAnimationFrame(state.animationFrameId);
+            clearInterval(state.psdIntervalId); // リアルタイムPSD更新を停止
+            
+            if (state.track && typeof state.track.applyConstraints === 'function') {
+                try {
+                    if (state.track.getCapabilities().torch) {
+                        state.track.applyConstraints({ advanced: [{ torch: false }] });
+                    }
+                } catch(e) { console.warn("トーチの停止に失敗しました。"); }
+            }
+            if (state.stream) {
+                state.stream.getTracks().forEach(track => track.stop());
+            }
+            video.srcObject = null;
+            
+            updateUI(false);
+
+            if (state.brightnessData.length > 128) {
+                showStatus('最終解析中...');
+                setTimeout(() => {
+                    analyzeData(state.brightnessData, state.timestamps, true); // 全データで最終解析
+                    status.classList.add('hidden');
+                }, 50);
+            } else {
+                showStatus('測定時間が短すぎます。再度測定してください。', true);
+            }
+        }
+
+        // --- 輝度計算（グレースケール） ---
+        function getAverageBrightness(data) {
+            let sum = 0;
+            for (let i = 0; i < data.length; i += 4) {
+                sum += 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
+            }
+            return sum / (data.length / 4);
+        }
+
+        // --- リアルタイムPSD更新 ---
+        function updateRealtimePSD() {
+            const dataLength = state.brightnessData.length;
+            if (dataLength < 256) return; // 最低でも256点のデータが必要
+
+            const fftSize = 1 << Math.floor(Math.log2(dataLength)); // 直近の2のべき乗のサイズ
+            const dataChunk = state.brightnessData.slice(-fftSize);
+            const timeChunk = state.timestamps.slice(-fftSize);
+
+            analyzeData(dataChunk, timeChunk, false); // リアルタイム解析（結果表示はしない）
+        }
+
+        // --- データ解析 ---
+        function analyzeData(data, timestamps, isFinalAnalysis) {
+            const samplingRate = 1000 / ((timestamps[timestamps.length - 1] - timestamps[0]) / (timestamps.length - 1));
+            let signal = detrend(data);
+            signal = movingAverage(signal, 5);
+
+            // FFT用のデータ準備
+            const N = 1 << Math.floor(Math.log2(signal.length));
+            if (N < 128) return; // FFTには十分なデータが必要
+            const paddedSignal = signal.slice(-N);
+            
+            // 周波数解析
+            const fftResult = fft(paddedSignal);
+            const freqs = Array.from({ length: N / 2 }, (_, i) => i * samplingRate / N);
+            const psd = fftResult.slice(0, N / 2).map(c => (c.re * c.re + c.im * c.im) / N);
+            
+            drawPSDChart(freqs, psd);
+
+            // 最終解析時のみ、HRV指標を計算して表示
+            if (isFinalAnalysis) {
+                const peaks = findPeaks(signal, samplingRate);
+                if (peaks.length < 5) {
+                    showStatus('有効な脈波を検出できませんでした。指を正しく当てて再測定してください。', true);
+                    return;
+                }
+                const rrIntervals = [];
+                for (let i = 1; i < peaks.length; i++) {
+                    rrIntervals.push((peaks[i] - peaks[i - 1]) * (1000 / samplingRate));
+                }
+
+                const avgRR = rrIntervals.reduce((a, b) => a + b, 0) / rrIntervals.length;
+                const bpm = 60000 / avgRR;
+                const sdnn = Math.sqrt(rrIntervals.map(x => Math.pow(x - avgRR, 2)).reduce((a, b) => a + b, 0) / rrIntervals.length);
+                
+                const lfRange = [0.04, 0.15];
+                const hfRange = [0.15, 0.4];
+                let lfPower = 0, hfPower = 0;
+                for(let i=0; i<freqs.length; i++){
+                    if(freqs[i] >= lfRange[0] && freqs[i] <= lfRange[1]){
+                        lfPower += psd[i];
+                    }
+                    if(freqs[i] >= hfRange[0] && freqs[i] <= hfRange[1]){
+                        hfPower += psd[i];
+                    }
+                }
+                const lfhfRatio = hfPower > 0 ? lfPower / hfPower : 0;
+
+                displayResults({ bpm, sdnn, lfPower, hfPower, lfhfRatio });
+            }
+        }
+        
+        function displayResults(results) {
+            document.getElementById('bpmValue').textContent = results.bpm.toFixed(1);
+            document.getElementById('sdnnValue').textContent = results.sdnn.toFixed(1) + ' ms';
+            document.getElementById('lfValue').textContent = results.lfPower.toFixed(2);
+            document.getElementById('hfValue').textContent = results.hfPower.toFixed(2);
+            document.getElementById('lfhfValue').textContent = results.lfhfRatio.toFixed(2);
+            resultContainer.classList.remove('hidden');
+        }
+
+        function drawPSDChart(freqs, psd) {
+            state.psdChart.data.labels = freqs;
+            state.psdChart.data.datasets[0].data = psd;
+            state.psdChart.update();
+        }
+
+        // --- データ処理ユーティリティ ---
+        function detrend(data) {
+            const n = data.length;
+            const x = Array.from({ length: n }, (_, i) => i);
+            const avgX = x.reduce((a, b) => a + b, 0) / n;
+            const avgY = data.reduce((a, b) => a + b, 0) / n;
+            let num = 0, den = 0;
+            for (let i = 0; i < n; i++) {
+                num += (x[i] - avgX) * (data[i] - avgY);
+                den += (x[i] - avgX) ** 2;
+            }
+            const slope = num / den;
+            const intercept = avgY - slope * avgX;
+            return data.map((y, i) => y - (slope * i + intercept));
+        }
+
+        function movingAverage(data, windowSize) {
+            const result = [];
+            for (let i = 0; i < data.length; i++) {
+                const start = Math.max(0, i - Math.floor(windowSize / 2));
+                const end = Math.min(data.length, i + Math.ceil(windowSize / 2));
+                let sum = 0;
+                for (let j = start; j < end; j++) {
+                    sum += data[j];
+                }
+                result.push(sum / (end - start));
+            }
+            return result;
+        }
+
+        function findPeaks(data, samplingRate) {
+            const peaks = [];
+            const minPeakHeight = data.reduce((a, b) => a + b, 0) / data.length;
+            const minPeakDistance = samplingRate / 4;
+
+            for (let i = 1; i < data.length - 1; i++) {
+                if (data[i] > minPeakHeight && data[i] > data[i - 1] && data[i] > data[i + 1]) {
+                    if (peaks.length === 0 || (i - peaks[peaks.length - 1]) > minPeakDistance) {
+                        peaks.push(i);
+                    }
+                }
+            }
+            return peaks;
+        }
+
+        // --- Cooley-Tukey FFT アルゴリズム ---
+        function fft(data) {
+            const N = data.length;
+            if (N <= 1) return [{ re: data[0] || 0, im: 0 }];
+
+            const ordered = [];
+            for (let i = 0; i < N; i++) {
+                let rev = 0;
+                for (let j = 0; j < Math.log2(N); j++) {
+                    rev |= ((i >> j) & 1) << (Math.log2(N) - 1 - j);
+                }
+                ordered[i] = { re: data[rev], im: 0 };
+            }
+
+            for (let len = 2; len <= N; len <<= 1) {
+                const halfLen = len >> 1;
+                const angle = -2 * Math.PI / len;
+                const w_len = { re: Math.cos(angle), im: Math.sin(angle) };
+                for (let i = 0; i < N; i += len) {
+                    let w = { re: 1, im: 0 };
+                    for (let j = 0; j < halfLen; j++) {
+                        const u = ordered[i + j];
+                        const v_re = ordered[i + j + halfLen].re * w.re - ordered[i + j + halfLen].im * w.im;
+                        const v_im = ordered[i + j + halfLen].re * w.im + ordered[i + j + halfLen].im * w.re;
+                        
+                        ordered[i + j] = { re: u.re + v_re, im: u.im + v_im };
+                        ordered[i + j + halfLen] = { re: u.re - v_re, im: u.im - v_im };
+
+                        const next_w_re = w.re * w_len.re - w.im * w_len.im;
+                        const next_w_im = w.re * w_len.im + w.im * w_len.re;
+                        w = { re: next_w_re, im: next_w_im };
+                    }
+                }
+            }
+            return ordered;
+        }
+        
+        // --- CSVダウンロード ---
+        function downloadCSV() {
+            if (state.brightnessData.length === 0) {
+                showStatus("保存するデータがありません。", true);
+                return;
+            }
+            const username = usernameInput.value || 'user';
+            const now = new Date();
+            const timestamp = `${now.getFullYear()}${(now.getMonth()+1).toString().padStart(2,'0')}${now.getDate().toString().padStart(2,'0')}_${now.getHours().toString().padStart(2,'0')}${now.getMinutes().toString().padStart(2,'0')}`;
+            const filename = `pulse_data_${username}_${timestamp}.csv`;
+            
+            let csvContent = "Time(ms),Brightness\n";
+            for (let i = 0; i < state.brightnessData.length; i++) {
+                csvContent += `${state.timestamps[i].toFixed(2)},${state.brightnessData[i].toFixed(4)}\n`;
+            }
+
+            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement("a");
+            if (link.download !== undefined) {
+                const url = URL.createObjectURL(blob);
+                link.setAttribute("href", url);
+                link.setAttribute("download", filename);
+                link.style.visibility = 'hidden';
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+            }
+        }
+    </script>
+</body>
+</html>
